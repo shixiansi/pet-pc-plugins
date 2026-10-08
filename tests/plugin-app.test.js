@@ -109,11 +109,34 @@ describe('handshake', () => {
     await loadApp();
 
     hostSends({ v: 2, type: 'init', granted: ['llm.chat'] });
+
+    // The foreign frame grants everything *deliberately*: an empty-grant frame
+    // would leave the UI disabled for the wrong reason, and the test would
+    // still pass with the source check deleted. Only a frame that would
+    // otherwise unlock the panel can prove the check is doing the work.
     const foreign = new JSDOM('<!doctype html><html><body></body></html>').window;
-    hostSends(initFrame([]), { source: foreign });
+    expect(foreign).not.toBe(window);
+    hostSends(initFrame(['llm.chat', 'pet.bubble', 'pet.surface']), { source: foreign });
 
     // Neither frame was treated as the host's init: the input stays disabled.
     expect(document.getElementById('prompt').disabled).toBe(true);
+    expect(document.getElementById('bubble').disabled).toBe(true);
+    expect(byType('request')).toHaveLength(0);
+  });
+
+  test('refuses requests before init even if a control is made clickable', async () => {
+    await loadApp();
+
+    // Strip the disabled attribute and fire the handlers directly, so the only
+    // thing left standing between the click and the wire is request()'s own
+    // "not initialised yet" guard. This is what pins that guard: the handler
+    // must not be relying on the DOM attribute the host handed it.
+    for (const id of ['bubble', 'surface']) {
+      const el = document.getElementById(id);
+      el.disabled = false;
+      el.click();
+    }
+
     expect(byType('request')).toHaveLength(0);
   });
 });
