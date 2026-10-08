@@ -1,0 +1,197 @@
+# PetPC 插件市场（pet-pc-plugins）
+
+桌宠 **PetPC** 的官方插件市场仓：示例插件的源码、打包脚本、市场目录 `index.json`、以及给人看的静态页 `index.html`。
+
+> **本仓是一个公开仓**（`https://github.com/shixiansi/pet-pc-plugins.git`），面向所有插件作者与使用者；桌宠本体所在的仓 **`pet_PC` 是私有仓**。两者刻意分开：插件作者只需要看到本仓的插件格式与产物，不需要、也拿不到桌宠本体的源码。桌宠本体请使用者**自行 build**（见下文「本仓不含什么」）。
+
+---
+
+## 1. 目录结构
+
+```
+market/                                    ← 本仓根目录（独立 git 仓，非 pet_PC 的子目录）
+├── .gitignore                             忽略 OS/编辑器噪声；dist/ 不忽略（是分发产物）
+├── README.md                              本文件
+├── index.json                             市场目录：桌宠拉取的唯一入口
+├── index.html                             人看的静态市场页（单文件、无脚本、无外链）
+├── package.json / vitest.config.js        示例插件前端行为的测试（需要宿主仓的 node_modules）
+├── tools/package.ps1                      打包 + 算 sha256 + 回写 index.json + 复制进宿主内置源
+├── tests/plugin-app.test.js               针对 plugins/<id>/app.js 的桥接协议行为测试
+├── plugins/
+│   └── com.shixiansi.plugin-chat/         一个插件一个目录，目录名 == 插件 id
+│       ├── manifest.json                  插件声明
+│       ├── panel.html                     面板视图入口（同时是浮层面入口）
+│       ├── app.js                         插件前端逻辑（桥接、流式渲染、气泡）
+│       └── style.css                      插件自己的样式
+└── dist/
+    └── com.shixiansi.plugin-chat-1.0.0.zip  打包产物：manifest.json + 资源，全部在 zip 根目录
+```
+
+**发布流程只有三步**：改 `plugins/<id>/` 下的内容 → 运行 `tools/package.ps1` → 提交 `dist/` 里新生成的 zip 与更新后的 `index.json`。
+
+---
+
+## 2. `manifest.json` 字段
+
+每个插件目录里的 `manifest.json` 是插件的全部声明。桌宠在安装时用 `internal/plugins.ParseManifest` 逐字段校验，**任何一条不合规都会拒绝安装**，不做静默修正。
+
+| 字段 | 必填 | 规则 |
+|---|---|---|
+| `id` | ✅ | 反向域名式小写标识，`^[a-z0-9]+(\.[a-z0-9][a-z0-9-]*)+$`，长度 ≤ 96；必须等于所在目录名 |
+| `name` | ✅ | 展示名，非空，长度 ≤ 64 |
+| `version` | ✅ | 语义化版本，`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`，如 `1.0.0` |
+| `author` | ✅ | 作者，非空 |
+| `description` | ✅ | 说明，非空，长度 ≤ 512 |
+| `permissions` | ✅ | 权限数组，可为空数组；每项必须是下表的九项之一，**不允许重复** |
+| `netHosts` | 选填 | `net.fetch` 的域名白名单，元素形如 `host` 或 `host:port`。**声明了 `net.fetch` 却不给 `netHosts` 视为非法**；反之不声明 `net.fetch` 就不需要这个键 |
+| `panel` | 选填 | 布尔；是否注册「插件」标签页里的面板视图 |
+| `surface` | 选填 | 浮层面矩形数组，最多 4 块；每块 `w>0 && h>0`、边长 ≤ 2000、`0 ≤ radius ≤ 200`、`|dx| ≤ 4000`、`|dy| ≤ 4000` |
+| `entry` | ✅ | 入口 HTML，相对路径、以 `.html` 结尾、不含 `\` 与 `..`、不以 `/` 开头；`panel` 与 `surface` 都未声明时拒绝（插件至少要有一种界面落点） |
+
+官方示例插件 `plugins/com.shixiansi.plugin-chat/manifest.json`：
+
+```json
+{
+  "id": "com.shixiansi.plugin-chat",
+  "name": "对话插件",
+  "version": "1.0.0",
+  "author": "shixiansi",
+  "description": "在面板里与大模型对话的官方示例插件（验证插件框架）。",
+  "permissions": ["llm.chat", "pet.bubble", "pet.surface"],
+  "panel": true,
+  "surface": [{ "dx": 160, "dy": 10, "w": 300, "h": 260, "radius": 14 }],
+  "entry": "panel.html"
+}
+```
+
+---
+
+## 3. 九项权限的含义
+
+插件能做的事**只有**这九项，全部由桌宠侧门控；插件本身读写不了文件、也发不出网络请求。
+
+| 权限 | 含义 |
+|---|---|
+| `todos.read` | 读取待办列表 |
+| `todos.write` | 新增、修改、完成与删除待办 |
+| `pet.bubble` | 让桌宠弹出一句话的气泡 |
+| `timer.read` | 读取番茄钟阶段与剩余时间 |
+| `events` | 订阅待办与番茄钟的变化事件（`todos.changed` / `timer.changed`） |
+| `net.fetch` | 访问网络，**仅限**该插件 `manifest.json` 里 `netHosts` 声明的域名 |
+| `storage` | 在插件自己的私有目录里保存少量数据 |
+| `pet.surface` | 在桌宠旁显示自定义浮层面 |
+| `llm.chat` | 调用你已在桌宠里配置好的大模型（流式返回）；**模型密钥始终留在桌宠侧**，插件拿不到 |
+
+示例插件只申请前三项之外的这三项：`llm.chat`、`pet.bubble`、`pet.surface`。它**不**申请 `net.fetch`（联网统一由宿主的 `llm.chat` 承担），因此它既不需要也不包含 `netHosts`。
+
+安装完成时插件是**停用**状态：你可以先看清它申请的权限，再自行启用并逐项授权。插件调用了未授权的能力时，桌宠会直接拒绝，且**不产生任何副作用**。
+
+---
+
+## 4. 打包与发版
+
+唯一路径是 `tools/package.ps1`，它本地、离线地做五件事（可重复运行，幂等）：
+
+1. 读每个 `plugins/<id>/manifest.json`，校验 `id`/`version`/`entry`，并断言 `entry` 指向的文件与 `panel.html`/`app.js`/`style.css` 都在插件目录内；
+2. **先删后建** `dist/<id>-<version>.zip`，把 `manifest.json` 与这些资源放在 **zip 根目录**（不带外层文件夹——桌宠直接解压进 `plugins/<id>/`，多一层目录会让 `manifest.json` 深一层而安装失败）；
+3. 用 `Get-FileHash -Algorithm SHA256` 实算最终 zip 的 sha256（小写 64 位十六进制）；
+4. 用**包内 manifest** 的 `name`/`version`/`author`/`description`/`permissions` 重写 `index.json` 里该条目的同名字段，并更新 `updatedAt`（RFC3339）。这样「目录里展示的权限」与「包里实际申请的权限」不可能漂移；
+5. 把 zip 与 `index.json` 复制到宿主仓的内置源 `internal\plugins\sample\`（同名同字节），作为离线兜底。
+
+运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\package.ps1
+# 或 PowerShell 7：pwsh -File tools/package.ps1
+```
+
+该脚本**不**执行任何 git 命令、**不**联网、也**不**调用 npm / go / wails。它使用固定时间戳写 zip 条目，因此源码未变时重复运行得到的是**同一份字节**，sha256 不变。
+
+发版即提交：
+
+```powershell
+git add dist/ index.json
+git commit -m "feat: [AI-GEN] publish com.shixiansi.plugin-chat 1.0.0"
+git push            # 由维护者手动执行，agent 不推送
+```
+
+### 示例插件的前端行为（`app.js`）
+
+- 启动即向宿主发 `{v:1,type:'ready'}`；收到宿主回投的 `init` 后才按 `init.granted` 启用界面——缺 `llm.chat` 时输入区禁用且状态行显示「未获授权：llm.chat」，缺 `pet.bubble` / `pet.surface` 时对应按钮禁用。**`init` 之前不发起任何 `request`**。
+- 流式回复（`llm.delta`）追加到**同一个文本节点**，该节点活到整条回复结束；`requestId` 不匹配的迟到分片一律丢弃；`llm.error` 渲染为一条系统行；`llm.done` 用宿主给的全量文本收口。
+- 「气泡」按钮发 `bubble.say`（取回复首行），「浮层面」按钮在 `surface.show` / `surface.hide` 之间切换。
+- 样式纪律：`style.css` 中**没有** `box-shadow`/`filter`/`text-shadow`/`transform`——这些装饰会画到盒子之外，而面板视图与浮层面都活在被区域裁剪的窗口矩形内。
+
+运行测试（需要宿主仓 `pet_PC` 的 `frontend\node_modules`，本仓通过目录 junction 复用，不自己再装一份）：
+
+```powershell
+node node_modules\vitest\vitest.mjs run
+```
+
+---
+
+## 5. 桌宠侧：安装位置
+
+安装后插件落在**用户数据目录**下：
+
+```
+%AppData%\PetPC\plugins\<插件id>\
+%AppData%\PetPC\plugins.json          已装索引（启用状态 + 已授权限）
+%AppData%\PetPC\plugin-data\<插件id>\ 插件私有存储（storage 能力唯一的可写落点）
+```
+
+即示例插件的安装目录是 `%AppData%\PetPC\plugins\com.shixiansi.plugin-chat\`，其中就是 zip 解压出来的 `manifest.json`、`panel.html`、`app.js`、`style.css`。
+
+---
+
+## 6. 桌宠侧：市场基址与镜像
+
+桌宠从**一个可配置基址**拉取市场目录：`基址 + /index.json`；条目的 `download` 是**相对路径**，实际下载地址为 `基址 + / + download`。
+
+默认基址走 `gh-proxy.com` 镜像（`raw.githubusercontent.com` 在部分网络下不可达）：
+
+```
+https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main
+```
+
+在该基址下，本仓的 `index.json` 与插件包分别位于：
+
+```
+https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/index.json
+https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/dist/com.shixiansi.plugin-chat-1.0.0.zip
+```
+
+基址可在桌宠的「插件」标签页里修改；把它**清空**表示强制使用桌宠内置的示例源（离线兜底，内容与 `dist/` 同字节）。
+
+### 换成别的仓名/镜像
+
+如果实际使用的远端仓名与本仓不同，**只需要改两处**，产物与目录结构完全不变：
+
+1. 本仓的远端地址：
+
+   ```powershell
+   git remote set-url origin https://github.com/<用户名>/<仓名>.git
+   ```
+
+2. 桌宠侧的市场基址（「插件」标签页里的输入框，或 `config.json` 的 `marketBaseUrl`）。
+
+`download` 写的是相对路径，所以换仓名、换镜像前缀都不需要改动任何插件包或 `index.json`。
+
+---
+
+## 7. 本仓不含什么
+
+- **本仓不含 exe，也不含任何构建产物**（桌宠本体的 `build/bin/`、前端 `frontend/dist/` 都不在这里）。桌宠本体请从私有仓 `pet_PC` 取源码后**自行 build**（该仓的 README 有构建步骤）。
+- 本仓唯一的「产物」是 `dist/` 下的插件 zip——那是插件包，不是桌宠程序。
+- 本仓不做 CI、不做 Release、不开 GitHub Pages：打包由 `tools/package.ps1` 在本地产出并提交，`index.html` 只是仓库里的一个静态文件，按需通过 raw 地址或上述镜像访问。
+
+---
+
+## 8. 提交规范
+
+提交信息形如 `<type>: [AI-GEN] <一句话描述>`，`type` 取 `feat`/`fix`/`docs`/`chore`/`refactor`/`test`/`perf`/`ci` 之一，例如：
+
+```
+feat: [AI-GEN] add the chat sample plugin and the market packaging script
+docs: [AI-GEN] document the mirror base URL and the install location
+```
