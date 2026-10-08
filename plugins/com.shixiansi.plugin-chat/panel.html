@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>对话插件</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header class="bar">
+  <span class="title">对话插件</span>
+  <span id="status" class="status" role="status" aria-live="polite">等待宿主初始化…</span>
+</header>
+
+<!-- The reply list owns the scroll: it is the only element that grows, and
+     `overflow-y:auto` plus `min-height:0` keeps that growth inside the 380x520
+     panel rectangle instead of pushing the composer out of it. -->
+<main id="reply" class="reply" aria-live="polite"></main>
+
+<footer class="compose">
+  <textarea id="prompt" class="prompt" rows="3" placeholder="和大模型说点什么…" aria-label="消息" disabled></textarea>
+  <div class="actions">
+    <button id="send" type="button" class="btn primary" disabled>发送</button>
+    <button id="stop" type="button" class="btn" disabled>停止</button>
+    <button id="bubble" type="button" class="btn" disabled>气泡</button>
+    <button id="surface" type="button" class="btn" disabled>浮层面</button>
+  </div>
+</footer>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

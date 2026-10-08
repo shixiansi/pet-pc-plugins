@@ -1,0 +1,188 @@
+/* Style discipline for a plugin that lives inside a clipped window region.
+ *
+ * This file deliberately uses no paint-outside-the-box decoration: no blurred
+ * drop shadows, no graphical effects, no glowing text, no scaling or rotation.
+ * Those all paint beyond the element's own border box, and a plugin's panel
+ * view and floating surface are each carved out of the window by a region that
+ * only ever describes rectangles - anything drawn past the rectangle is simply
+ * cut off, so the decoration reads as a glitch rather than as depth.
+ *
+ * (The four property names are spelled out in README.md, in the section on the
+ * plugin's front-end behaviour, where they are the point rather than a risk.)
+ *
+ * Layout rule: the reply list is the only thing that grows, and it scrolls
+ * inside itself. Nothing here may push the composer out of the panel rectangle.
+ */
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow: hidden;
+  background: #191b21;
+  color: #e8eaf0;
+  font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+/* The header and the composer keep their natural height; the reply list takes
+ * whatever is left (`flex: 1 1 auto` with `min-height: 0`). Without that
+ * min-height a flex item refuses to shrink below its content and the list
+ * would grow the page instead of scrolling in place. */
+.bar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.status {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: #9aa3b2;
+  font-size: 12px;
+}
+
+.reply {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #2c313c;
+  border-radius: 10px;
+  background: #12141a;
+}
+
+.msg {
+  max-width: 100%;
+  padding: 6px 9px;
+  border-radius: 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: #2f6feb;
+  color: #ffffff;
+}
+
+.msg.assistant {
+  align-self: flex-start;
+  background: #232733;
+}
+
+.msg.system {
+  align-self: stretch;
+  background: #3a2626;
+  color: #ffb4b4;
+  font-size: 12px;
+}
+
+/* A text cursor for the reply in flight: opacity only, nothing that repaints
+ * outside the box. */
+.msg.assistant.streaming::after {
+  content: "▍";
+  opacity: 0.6;
+}
+
+.compose {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prompt {
+  width: 100%;
+  resize: none;
+  min-height: 58px;
+  max-height: 96px;
+  padding: 8px;
+  border: 1px solid #2c313c;
+  border-radius: 8px;
+  background: #12141a;
+  color: inherit;
+  font: inherit;
+}
+
+.prompt:focus {
+  outline: 1px solid #2f6feb;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  border: 1px solid #2c313c;
+  border-radius: 8px;
+  background: #232733;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: #2c313c;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: #2f6feb;
+  border-color: #2f6feb;
+  color: #ffffff;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: #3b7cf7;
+}
+
+/* The floating surface is the same document in a 300x260 rounded rectangle:
+ * the composer stays pinned to the bottom and the reply list keeps scrolling,
+ * so the smaller rectangle shows fewer lines rather than a cut-off layout. */
+@media (max-width: 340px), (max-height: 300px) {
+  body {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .prompt {
+    min-height: 44px;
+    max-height: 64px;
+  }
+}

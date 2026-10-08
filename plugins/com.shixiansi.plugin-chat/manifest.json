@@ -1,0 +1,11 @@
+{
+  "id": "com.shixiansi.plugin-chat",
+  "name": "对话插件",
+  "version": "1.0.0",
+  "author": "shixiansi",
+  "description": "在面板里与大模型对话的官方示例插件（验证插件框架）。",
+  "permissions": ["llm.chat", "pet.bubble", "pet.surface"],
+  "panel": true,
+  "surface": [{ "dx": 160, "dy": 10, "w": 300, "h": 260, "radius": 14 }],
+  "entry": "panel.html"
+}
