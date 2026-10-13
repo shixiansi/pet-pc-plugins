@@ -27,6 +27,27 @@
   box-sizing: border-box;
 }
 
+/*
+ * The `hidden` attribute must WIN over any `display` an element is given here.
+ *
+ * The browser's own rule for `[hidden]` is `display: none`, but it lives in the
+ * user-agent stylesheet - so ANY author rule that sets `display` outranks it, and
+ * an element marked `hidden` in the markup stays visible. That is not a cosmetic
+ * detail in this plugin: `#dots` is marked `hidden` in the panel view and is styled
+ * `position: absolute; inset: 0; display: flex`, which made it a full-size layer on
+ * top of the whole conversation. It has no visible background, so the interface
+ * looked completely normal - and every click landed on that invisible layer instead
+ * of on the send box or the buttons, so the whole panel appeared dead.
+ *
+ * The fix is this rule rather than removing `display: flex`, because the pattern
+ * (`hidden` in the markup, `display` in the stylesheet) is used by several elements
+ * and each one would have to be audited separately. Making `hidden` authoritative
+ * once is what keeps the next such element from reintroducing the bug.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;

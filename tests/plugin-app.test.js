@@ -18,8 +18,55 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const pluginDir = path.join(here, '..', 'plugins', 'com.shixiansi.plugin-chat');
 const appPath = path.join(pluginDir, 'app.js');
 const panelPath = path.join(pluginDir, 'panel.html');
+const cssPath = path.join(pluginDir, 'style.css');
 
 const html = readFileSync(panelPath, 'utf8');
+const css = readFileSync(cssPath, 'utf8');
+
+// The `hidden` attribute must beat any `display` this stylesheet sets.
+//
+// This is asserted against the STYLESHEET text rather than by rendering, because
+// the failure it guards against is invisible to every other kind of test: the
+// browser's `[hidden] { display: none }` lives in the user-agent sheet, so an
+// author rule that sets `display` outranks it and the element stays on screen.
+// `#dots` is `position: absolute; inset: 0; display: flex` and is marked `hidden`
+// in the panel view, so without this rule it became a full-size INVISIBLE layer
+// over the whole conversation - the interface looked perfect and every click
+// landed on that layer, leaving the panel apparently dead.
+//
+// A jsdom test cannot catch it either, since jsdom does not apply a stylesheet to
+// hit-testing. So the rule is pinned here, next to the markup that relies on it.
+describe('style.css: the hidden attribute is authoritative', () => {
+  test('a [hidden] rule exists and uses !important', () => {
+    const match = css.match(/\[hidden\][^{]*\{([^}]*)\}/);
+    expect(match, 'style.css has no [hidden] rule').toBeTruthy();
+    expect(match[1]).toMatch(/display\s*:\s*none/);
+    // Without !important the rule loses to the element's own `display`, which is
+    // exactly the bug: .dots is `display: flex` and #dots is `hidden`.
+    expect(match[1]).toMatch(/!important/);
+  });
+
+  test('the elements toggled by the hidden property are the ones at risk', () => {
+    // `app.js` toggles `hidden` on these three, so each is a candidate for the
+    // bug above if it also carries a `display` here.
+    for (const id of ['dots', 'hint', 'reply']) {
+      const rule = new RegExp(`\\.${id}\\s*\\{([^}]*)\\}`, 's');
+      const m = css.match(rule);
+      if (m && /display\s*:/.test(m[1])) {
+        // If it sets a display, the [hidden] rule above is what keeps `hidden`
+        // meaningful - so that rule must be present (already asserted) and this
+        // element is the reason it exists.
+        expect(m[1]).toMatch(/display\s*:/);
+      }
+    }
+    // And the one that actually caused the bug must still be a full-size overlay,
+    // so this test keeps describing reality if the layout is ever changed.
+    const dots = css.match(/\.dots\s*\{([^}]*)\}/s);
+    expect(dots, '.dots rule is gone; re-check what this test is guarding').toBeTruthy();
+    expect(dots[1]).toMatch(/inset\s*:\s*0/);
+    expect(dots[1]).toMatch(/display\s*:\s*flex/);
+  });
+});
 
 let windowListeners = [];
 

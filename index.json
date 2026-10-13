@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-13T13:36:51Z",
+  "updatedAt": "2026-10-13T14:32:43Z",
   "plugins": [
     {
       "id": "com.shixiansi.plugin-chat",
@@ -10,7 +10,7 @@
       "description": "在面板里与桌宠旁和大模型对话的官方插件；自己的 AI 配置与密钥由自己保存。",
       "permissions": ["llm.chat", "pet.bubble", "pet.surface", "plugin.config", "storage"],
       "download": "dist/com.shixiansi.plugin-chat-1.1.0.zip",
-      "sha256": "194ad0b4db215f3c47f26013a4a47300eb19e4e2f5c2f7db3d384fdac361fa58"
+      "sha256": "5ee7b7a2c2e0d411839acf7c8c25acded2c07614569f7ccb24c6fe291cdfbae4"
     }
   ]
 }
