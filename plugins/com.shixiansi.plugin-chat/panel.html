@@ -5,19 +5,29 @@
 <title>对话插件</title>
 <link rel="stylesheet" href="./style.css">
 </head>
-<body>
+<!-- ONE document, four appearances.
+     The host mounts this file in two different places: inside the conversation
+     slot (the panel, where it fills a 380x520 area) and once per declared
+     floating rectangle (the 300x112 card, the 300x56 input bar and the three
+     small thinking bubbles). `app.js` reads `surface.kind` and
+     `surface.rectIndex` from the `init` frame and swaps the root class between
+     `view-panel` / `view-card` / `view-bar` / `view-bubble`, which is what
+     turns one document into the right shape for each block. -->
+<body id="root" class="view-panel" data-surface="panel" data-shape="view-panel">
 <header class="bar">
   <span class="title">对话插件</span>
   <span id="status" class="status" role="status" aria-live="polite">等待宿主初始化…</span>
 </header>
 
-<!-- The reply list owns the scroll: it is the only element that grows, and
-     `overflow-y:auto` plus `min-height:0` keeps that growth inside the 380x520
-     panel rectangle instead of pushing the composer out of it. -->
+<!-- The message list owns the scroll: it is the only element that grows, and
+     `overflow-y:auto` plus `min-height:0` keeps that growth inside the box
+     instead of pushing the composer out of it. -->
 <main id="reply" class="reply" aria-live="polite"></main>
 
+<p id="hint" class="hint" hidden>双击桌宠可以在这个卡片旁边继续聊。</p>
+
 <footer class="compose">
-  <textarea id="prompt" class="prompt" rows="3" placeholder="和大模型说点什么…" aria-label="消息" disabled></textarea>
+  <textarea id="prompt" class="prompt" rows="1" placeholder="和大模型说点什么…" aria-label="消息" disabled></textarea>
   <div class="actions">
     <button id="send" type="button" class="btn primary" disabled>发送</button>
     <button id="stop" type="button" class="btn" disabled>停止</button>
@@ -25,6 +35,10 @@
     <button id="surface" type="button" class="btn" disabled>浮层面</button>
   </div>
 </footer>
+
+<!-- The thinking bubbles: one dot per ellipse block, sized by the rect index so
+     the 34x20 trail and the 15x9 tip do not draw the same mark. -->
+<div id="dots" class="dots" hidden aria-hidden="true"><i></i><i></i><i></i></div>
 
 <script type="module" src="./app.js"></script>
 </body>

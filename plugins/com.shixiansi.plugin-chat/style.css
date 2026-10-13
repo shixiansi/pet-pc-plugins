@@ -2,16 +2,21 @@
  *
  * This file deliberately uses no paint-outside-the-box decoration: no blurred
  * drop shadows, no graphical effects, no glowing text, no scaling or rotation.
- * Those all paint beyond the element's own border box, and a plugin's panel
- * view and floating surface are each carved out of the window by a region that
- * only ever describes rectangles - anything drawn past the rectangle is simply
- * cut off, so the decoration reads as a glitch rather than as depth.
+ * Those all paint beyond the element's own border box, and this plugin's blocks
+ * are each carved out of the window by a region that only ever describes
+ * rectangles - anything drawn past the rectangle is simply cut off, so the
+ * decoration reads as a glitch rather than as depth.
  *
- * (The four property names are spelled out in README.md, in the section on the
- * plugin's front-end behaviour, where they are the point rather than a risk.)
+ * ONE document, FOUR appearances. The root class picks which one is drawn:
  *
- * Layout rule: the reply list is the only thing that grows, and it scrolls
- * inside itself. Nothing here may push the composer out of the panel rectangle.
+ *   .view-panel   the conversation slot            (380x520, list + composer)
+ *   .view-card    floating block 0                 (300x112)
+ *   .view-bar     floating block 1                 (300x56)
+ *   .view-bubble  floating blocks 2, 3 and 4       (ellipses)
+ *
+ * Layout rule: the message list is the only thing that grows, and it scrolls
+ * inside itself. Nothing here may push the composer out of the box it was
+ * given, and nothing may resize the window: the host owns the geometry.
  */
 
 :root {
@@ -40,7 +45,7 @@ body {
   font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
 }
 
-/* The header and the composer keep their natural height; the reply list takes
+/* The header and the composer keep their natural height; the message list takes
  * whatever is left (`flex: 1 1 auto` with `min-height: 0`). Without that
  * min-height a flex item refuses to shrink below its content and the list
  * would grow the page instead of scrolling in place. */
@@ -112,6 +117,13 @@ body {
   opacity: 0.6;
 }
 
+.hint {
+  margin: 0;
+  flex: 0 0 auto;
+  color: #9aa3b2;
+  font-size: 12px;
+}
+
 .compose {
   flex: 0 0 auto;
   display: flex;
@@ -122,9 +134,9 @@ body {
 .prompt {
   width: 100%;
   resize: none;
-  min-height: 58px;
+  min-height: 30px;
   max-height: 96px;
-  padding: 8px;
+  padding: 7px 8px;
   border: 1px solid #2c313c;
   border-radius: 8px;
   background: #12141a;
@@ -172,17 +184,139 @@ body {
   background: #3b7cf7;
 }
 
-/* The floating surface is the same document in a 300x260 rounded rectangle:
- * the composer stays pinned to the bottom and the reply list keeps scrolling,
- * so the smaller rectangle shows fewer lines rather than a cut-off layout. */
-@media (max-width: 340px), (max-height: 300px) {
-  body {
-    padding: 8px;
-    gap: 6px;
-  }
+/* --- the thinking bubbles ---------------------------------------------------
+ * Three ellipses, and the region the host cropped the window to is an ellipse
+ * too, so the box itself is round rather than a rounded rectangle: a rectangle
+ * inside an elliptical crop would leave its four corners cut away and show the
+ * desktop through the gaps.
+ */
+.view-bubble,
+body.view-bubble {
+  border-radius: 50%;
+}
 
-  .prompt {
-    min-height: 44px;
-    max-height: 64px;
+.dots {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+}
+
+.dots i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6f7a8c;
+  opacity: 0.5;
+}
+
+.dots i.on {
+  background: #e8eaf0;
+  opacity: 1;
+}
+
+/* --- the floating card ------------------------------------------------------
+ * 300x112: room for a few lines and a one-row composer. The block is a window
+ * region, so its own rounded corners come from the region the host cropped -
+ * the radius here only keeps the content off the corner.
+ */
+body.view-card {
+  padding: 8px;
+  gap: 6px;
+  border-radius: 14px;
+  background: #1d2027;
+}
+
+body.view-card .reply {
+  padding: 6px;
+  border-color: #262b35;
+}
+
+body.view-card .msg {
+  padding: 4px 7px;
+  font-size: 12px;
+}
+
+body.view-card .compose {
+  gap: 6px;
+}
+
+body.view-card .actions {
+  display: none;
+}
+
+/* --- the floating input bar -------------------------------------------------
+ * 300x56: one textarea and one send button, side by side. Nothing else fits,
+ * so the message list and the button row are hidden rather than shrunk.
+ */
+body.view-bar {
+  flex-direction: row;
+  align-items: stretch;
+  padding: 6px;
+  gap: 6px;
+  border-radius: 14px;
+  background: #1d2027;
+}
+
+body.view-bar .bar,
+body.view-bar .reply,
+body.view-bar .hint,
+body.view-bar .dots,
+body.view-bar .actions {
+  display: none;
+}
+
+body.view-bar .compose {
+  flex: 1 1 auto;
+  flex-direction: row;
+  gap: 6px;
+}
+
+body.view-bar .prompt {
+  min-height: 0;
+  max-height: none;
+  padding: 6px 8px;
+}
+
+/* --- the bubbles -----------------------------------------------------------
+ * The smallest blocks are ellipses with a dot trail; a single line of text at
+ * most, and only for the largest of them, so a 15x9 tip never tries to draw a
+ * sentence.
+ */
+body.view-bubble {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+  background: #1d2027;
+}
+
+body.view-bubble .bar,
+body.view-bubble .reply,
+body.view-bubble .hint,
+body.view-bubble .compose {
+  display: none;
+}
+
+/* The 34x20 trail carries short text; the two smaller tips are dots only. */
+body.view-bubble .dots {
+  gap: 3px;
+}
+
+@media (max-height: 200px) {
+  body.view-card .bar {
+    display: none;
+  }
+}
+
+@media (max-width: 200px) {
+  .msg {
+    padding: 3px 5px;
+    font-size: 11px;
   }
 }

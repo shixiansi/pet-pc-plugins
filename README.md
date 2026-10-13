@@ -24,7 +24,7 @@ market/                                    ← 本仓根目录（独立 git 仓�
 │       ├── app.js                         插件前端逻辑（桥接、流式渲染、气泡）
 │       └── style.css                      插件自己的样式
 └── dist/
-    └── com.shixiansi.plugin-chat-1.0.0.zip  打包产物：manifest.json + 资源，全部在 zip 根目录
+    └── com.shixiansi.plugin-chat-1.1.0.zip  打包产物：manifest.json + 资源，全部在 zip 根目录
 ```
 
 **发布流程只有三步**：改 `plugins/<id>/` 下的内容 → 运行 `tools/package.ps1` → 提交 `dist/` 里新生成的 zip 与更新后的 `index.json`。
@@ -42,10 +42,12 @@ market/                                    ← 本仓根目录（独立 git 仓�
 | `version` | ✅ | 语义化版本，`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`，如 `1.0.0` |
 | `author` | ✅ | 作者，非空 |
 | `description` | ✅ | 说明，非空，长度 ≤ 512 |
-| `permissions` | ✅ | 权限数组，可为空数组；每项必须是下表的九项之一，**不允许重复** |
+| `permissions` | ✅ | 权限数组，可为空数组；每项必须是下表的十项之一，**不允许重复** |
 | `netHosts` | 选填 | `net.fetch` 的域名白名单，元素形如 `host` 或 `host:port`。**声明了 `net.fetch` 却不给 `netHosts` 视为非法**；反之不声明 `net.fetch` 就不需要这个键 |
-| `panel` | 选填 | 布尔；是否注册「插件」标签页里的面板视图 |
-| `surface` | 选填 | 浮层面矩形数组，最多 4 块；每块 `w>0 && h>0`、边长 ≤ 2000、`0 ≤ radius ≤ 200`、`|dx| ≤ 4000`、`|dy| ≤ 4000` |
+| `panel` | 选填 | 布尔；是否注册面板视图（插件 tab 已移除，面板视图现在挂在宿主的面板槽位上） |
+| `panelSlot` | 选填 | 面板槽位名，目前只接受 `"chat"`；声明它必须同时 `panel: true` |
+| `surface` | 选填 | 浮层面矩形数组，最多 8 块；每块 `w>0 && h>0`、边长 ≤ 2000、`0 ≤ radius ≤ 200`、`|dx| ≤ 4000`、`|dy| ≤ 4000`；`"ellipse": true` 的块画成椭圆而非圆角矩形 |
+| `config` | 选填 | 插件自己的设置声明，最多 16 项；每项 `key`/`label`/`type`（`text`/`number`/`bool`/`secret`）与 `default`；`secret: true` 的项值加密存储且永不出现在任何返回值里；`hostWhitelist: true` 至多一项，它的当前值会成为该插件的 `net.fetch` 额外主机白名单 |
 | `entry` | ✅ | 入口 HTML，相对路径、以 `.html` 结尾、不含 `\` 与 `..`、不以 `/` 开头；`panel` 与 `surface` 都未声明时拒绝（插件至少要有一种界面落点） |
 
 官方示例插件 `plugins/com.shixiansi.plugin-chat/manifest.json`：
@@ -54,21 +56,34 @@ market/                                    ← 本仓根目录（独立 git 仓�
 {
   "id": "com.shixiansi.plugin-chat",
   "name": "对话插件",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "shixiansi",
-  "description": "在面板里与大模型对话的官方示例插件（验证插件框架）。",
-  "permissions": ["llm.chat", "pet.bubble", "pet.surface"],
+  "description": "在面板里与桌宠旁和大模型对话的官方插件；自己的 AI 配置与密钥由自己保存。",
+  "permissions": ["llm.chat", "pet.bubble", "pet.surface", "plugin.config", "storage"],
   "panel": true,
-  "surface": [{ "dx": 160, "dy": 10, "w": 300, "h": 260, "radius": 14 }],
+  "panelSlot": "chat",
+  "surface": [
+    { "dx": 160, "dy": 10, "w": 300, "h": 112, "radius": 14 },
+    { "dx": 160, "dy": 226, "w": 300, "h": 56, "radius": 14 },
+    { "dx": 160, "dy": 138, "w": 34, "h": 20, "ellipse": true },
+    { "dx": 160, "dy": 163, "w": 24, "h": 14, "ellipse": true },
+    { "dx": 160, "dy": 184, "w": 15, "h": 9, "ellipse": true }
+  ],
+  "config": [
+    { "key": "llmBaseUrl", "label": "接口地址", "type": "text", "default": "https://api.deepseek.com/v1", "hostWhitelist": true },
+    { "key": "llmApiKey", "label": "API Key", "type": "secret", "secret": true }
+  ],
   "entry": "panel.html"
 }
 ```
 
+（上面为了可读性省略了另 12 项 `config`；文件里是完整的 14 项 —— 13 个 `llm*` 设置 + `llmApiKey`。）
+
 ---
 
-## 3. 九项权限的含义
+## 3. 十项权限的含义
 
-插件能做的事**只有**这九项，全部由桌宠侧门控；插件本身读写不了文件、也发不出网络请求。
+插件能做的事**只有**这十项，全部由桌宠侧门控；插件本身读写不了文件、也发不出网络请求。
 
 | 权限 | 含义 |
 |---|---|
@@ -77,12 +92,13 @@ market/                                    ← 本仓根目录（独立 git 仓�
 | `pet.bubble` | 让桌宠弹出一句话的气泡 |
 | `timer.read` | 读取番茄钟阶段与剩余时间 |
 | `events` | 订阅待办与番茄钟的变化事件（`todos.changed` / `timer.changed`） |
-| `net.fetch` | 访问网络，**仅限**该插件 `manifest.json` 里 `netHosts` 声明的域名 |
+| `net.fetch` | 访问网络，**仅限**该插件 `manifest.json` 里 `netHosts` 声明的域名，外加它 `hostWhitelist` 配置项当前值里的域名 |
 | `storage` | 在插件自己的私有目录里保存少量数据 |
 | `pet.surface` | 在桌宠旁显示自定义浮层面 |
-| `llm.chat` | 调用你已在桌宠里配置好的大模型（流式返回）；**模型密钥始终留在桌宠侧**，插件拿不到 |
+| `llm.chat` | 调用该插件自己配置的大模型（流式返回）；**模型密钥归插件所有**，加密存在插件私有目录里 |
+| `plugin.config` | 保存插件自己的设置；存在插件私有目录里，插件之间互相读不到 |
 
-示例插件只申请前三项之外的这三项：`llm.chat`、`pet.bubble`、`pet.surface`。它**不**申请 `net.fetch`（联网统一由宿主的 `llm.chat` 承担），因此它既不需要也不包含 `netHosts`。
+示例插件申请 `llm.chat`、`pet.bubble`、`pet.surface`、`plugin.config`、`storage` 五项。它**不**申请 `net.fetch`（请求统一由宿主的 `llm.chat` 发出），因此它既不需要也不包含 `netHosts`。
 
 安装完成时插件是**停用**状态：你可以先看清它申请的权限，再自行启用并逐项授权。插件调用了未授权的能力时，桌宠会直接拒绝，且**不产生任何副作用**。
 
@@ -111,16 +127,18 @@ powershell -ExecutionPolicy Bypass -File tools\package.ps1
 
 ```powershell
 git add dist/ index.json
-git commit -m "feat: [AI-GEN] publish com.shixiansi.plugin-chat 1.0.0"
+git commit -m "feat: [AI-GEN] publish com.shixiansi.plugin-chat 1.1.0"
 git push            # 由维护者手动执行，agent 不推送
 ```
 
 ### 示例插件的前端行为（`app.js`）
 
 - 启动即向宿主发 `{v:1,type:'ready'}`；收到宿主回投的 `init` 后才按 `init.granted` 启用界面——缺 `llm.chat` 时输入区禁用且状态行显示「未获授权：llm.chat」，缺 `pet.bubble` / `pet.surface` 时对应按钮禁用。**`init` 之前不发起任何 `request`**。
-- 流式回复（`llm.delta`）追加到**同一个文本节点**，该节点活到整条回复结束；`requestId` 不匹配的迟到分片一律丢弃；`llm.error` 渲染为一条系统行；`llm.done` 用宿主给的全量文本收口。
+- **一份文档、四种外观**：`init.surface.kind` 为 `'panel'` 时渲染会话视图（消息列表 + 输入框）；为 `'surface'` 时按 `init.surface.rectIndex` 渲染卡片（`0`）、输入条（`1`）或思考泡泡（`2` 起）。四种外观的根元素 class 互不相同（`view-panel` / `view-card` / `view-bar` / `view-bubble`），这正是 `style.css` 区分它们的依据。
+- 流式回复（`llm.delta`）追加到**同一个文本节点**，该节点活到整条回复结束；`requestId` 不匹配的迟到分片一律丢弃；`llm.error` 渲染为一条系统行；`llm.done` 用宿主给的全量文本收口——**当全文与已累积内容不一致时整体替换显示文本**，而不是再追加一段，否则丢片修好的答复会重复半句。
+- 对话记录由插件自己经 `storage.set` / `storage.get`（key `llm-history`）读写；宿主的 `llm.chat` **不写转写**。每日本次用量（`llm-usage`）由宿主唯一写。
 - 「气泡」按钮发 `bubble.say`（取回复首行），「浮层面」按钮在 `surface.show` / `surface.hide` 之间切换。
-- 样式纪律：`style.css` 中**没有** `box-shadow`/`filter`/`text-shadow`/`transform`——这些装饰会画到盒子之外，而面板视图与浮层面都活在被区域裁剪的窗口矩形内。
+- 样式纪律：`style.css` 中**没有** `box-shadow`/`filter`/`text-shadow`/`transform`——这些装饰会画到盒子之外，而面板槽位与浮层面都活在被区域裁剪的窗口矩形内；三个思考泡泡是 `border-radius: 50%` 的椭圆，与宿主裁剪它们的椭圆区域一致。
 
 运行测试（需要宿主仓 `pet_PC` 的 `frontend\node_modules`，本仓通过目录 junction 复用，不自己再装一份）：
 
@@ -158,10 +176,10 @@ https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/
 
 ```
 https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/index.json
-https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/dist/com.shixiansi.plugin-chat-1.0.0.zip
+https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/dist/com.shixiansi.plugin-chat-1.1.0.zip
 ```
 
-基址可在桌宠的「插件」标签页里修改；把它**清空**表示强制使用桌宠内置的示例源（离线兜底，内容与 `dist/` 同字节）。
+基址可在桌宠的「设置」页里修改（点「打开插件市场」进市场程序改）；把它**清空**表示强制使用桌宠内置的示例源（离线兜底，内容与 `dist/` 同字节）。
 
 ### 换成别的仓名/镜像
 

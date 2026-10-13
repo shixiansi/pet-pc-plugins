@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-08T17:06:35Z",
+  "updatedAt": "2026-10-13T13:36:51Z",
   "plugins": [
     {
       "id": "com.shixiansi.plugin-chat",
       "name": "对话插件",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "shixiansi",
-      "description": "在面板里与大模型对话的官方示例插件（验证插件框架）。",
-      "permissions": ["llm.chat", "pet.bubble", "pet.surface"],
-      "download": "dist/com.shixiansi.plugin-chat-1.0.0.zip",
-      "sha256": "0db2a3a7185bc925bf3ede7fbae03f8ca15ff6f6f0d24ee9125d7262c94f6f4b"
+      "description": "在面板里与桌宠旁和大模型对话的官方插件；自己的 AI 配置与密钥由自己保存。",
+      "permissions": ["llm.chat", "pet.bubble", "pet.surface", "plugin.config", "storage"],
+      "download": "dist/com.shixiansi.plugin-chat-1.1.0.zip",
+      "sha256": "194ad0b4db215f3c47f26013a4a47300eb19e4e2f5c2f7db3d384fdac361fa58"
     }
   ]
 }

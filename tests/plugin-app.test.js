@@ -54,10 +54,28 @@ function initFrame(granted) {
     v: 1,
     type: 'init',
     pluginId: 'com.shixiansi.plugin-chat',
-    permissions: ['llm.chat', 'pet.bubble', 'pet.surface'],
+    permissions: ['llm.chat', 'pet.bubble', 'pet.surface', 'plugin.config', 'storage'],
     granted,
     surface: { kind: 'panel' },
   };
+}
+
+/** An init frame for one floating block, as the host sends it (design §4.4). */
+function surfaceFrame(rectIndex) {
+  return {
+    v: 1,
+    type: 'init',
+    pluginId: 'com.shixiansi.plugin-chat',
+    permissions: ['llm.chat', 'pet.bubble', 'pet.surface', 'plugin.config', 'storage'],
+    granted: ['llm.chat', 'pet.bubble', 'pet.surface', 'storage'],
+    surface: { kind: 'surface', rectIndex, rectCount: 5 },
+  };
+}
+
+/** The root element whose class names the appearance is written on. */
+function shape() {
+  const root = document.getElementById('root') || document.body;
+  return root.className;
 }
 
 /** Drive the plugin through a granted handshake and return the send button. */
@@ -138,6 +156,72 @@ describe('handshake', () => {
     }
 
     expect(byType('request')).toHaveLength(0);
+  });
+});
+
+describe('surface kinds', () => {
+  // The same entry file serves the conversation slot and each floating block,
+  // so `surface.kind` and `surface.rectIndex` are what decide the appearance.
+  // These are behaviour tests rather than source greps: the class has to be on
+  // the root element the stylesheet keys off.
+  test('the panel kind renders the conversation view with a message list and an input', async () => {
+    await loadApp();
+    hostSends(initFrame(['llm.chat']));
+
+    expect(shape()).toContain('view-panel');
+    expect(document.getElementById('reply')).not.toBeNull();
+    expect(document.getElementById('prompt')).not.toBeNull();
+    expect(document.getElementById('prompt').disabled).toBe(false);
+  });
+
+  test('the three floating shapes get three distinct root classes', async () => {
+    const seen = [];
+    for (const index of [0, 1, 2]) {
+      installPanel();
+      await loadApp();
+      hostSends(surfaceFrame(index));
+      seen.push(shape());
+      // Nothing the panel owns is on screen in a floating block except the one
+      // shape it draws.
+      expect(document.getElementById('reply')).not.toBeNull();
+    }
+
+    expect(seen[0]).toContain('view-card');
+    expect(seen[1]).toContain('view-bar');
+    expect(seen[2]).toContain('view-bubble');
+    expect(new Set(seen).size).toBe(3);
+  });
+
+  test('the card shows the transcript, the bar hides it and focuses the input', async () => {
+    installPanel();
+    await loadApp();
+    hostSends(surfaceFrame(0));
+    expect(document.getElementById('reply').hidden).toBe(false);
+
+    installPanel();
+    await loadApp();
+    hostSends(surfaceFrame(1));
+    expect(document.getElementById('reply').hidden).toBe(true);
+  });
+
+  test('a bubble lights exactly its own dot', async () => {
+    installPanel();
+    await loadApp();
+    hostSends(surfaceFrame(3));
+
+    const dots = [...document.querySelectorAll('#dots i')];
+    expect(dots).toHaveLength(3);
+    expect(dots.filter((d) => d.className === 'on')).toHaveLength(1);
+    expect(dots[1].className).toBe('on');
+  });
+
+  test('a bubble shows the dots and hides the composer', async () => {
+    installPanel();
+    await loadApp();
+    hostSends(surfaceFrame(2));
+
+    expect(document.getElementById('dots').hidden).toBe(false);
+    expect(document.getElementById('reply').hidden).toBe(true);
   });
 });
 
@@ -261,6 +345,92 @@ describe('llm.chat', () => {
     // The reply is over, so a delta that arrives now is stale and must be dropped.
     hostSends({ v: 1, type: 'event', name: 'llm.delta', payload: { requestId, text: '多余' } });
     expect(container.textContent).toBe('半句话。');
+  });
+
+  test('llm.done REPLACES the accumulated text when the two disagree', async () => {
+    const request = await ask();
+    const { requestId } = request.payload;
+
+    // The deltas lost a chunk (a dropped frame, a retry that re-sent the tail),
+    // so what is on screen is a fragment of the answer.
+    hostSends({ v: 1, type: 'event', name: 'llm.delta', payload: { requestId, text: '你好，' } });
+    hostSends({ v: 1, type: 'event', name: 'llm.delta', payload: { requestId, text: '世界' } });
+    expect(document.querySelector('#reply .msg.assistant').textContent).toBe('你好，世界');
+
+    hostSends({
+      v: 1,
+      type: 'event',
+      name: 'llm.done',
+      payload: { requestId, text: '你好，世界！这一句在分片里丢了。' },
+    });
+
+    const container = document.querySelector('#reply .msg.assistant');
+    expect(container.textContent).toBe('你好，世界！这一句在分片里丢了。');
+    // Replaced, not appended: the fragment appears exactly once.
+    expect(container.textContent.match(/你好，世界/g)).toHaveLength(1);
+  });
+
+  test('llm.done keeps the streamed text when it agrees', async () => {
+    const request = await ask();
+    const { requestId } = request.payload;
+
+    hostSends({ v: 1, type: 'event', name: 'llm.delta', payload: { requestId, text: '一致' } });
+    hostSends({ v: 1, type: 'event', name: 'llm.done', payload: { requestId, text: '一致' } });
+
+    expect(document.querySelector('#reply .msg.assistant').textContent).toBe('一致');
+  });
+});
+
+describe('transcript storage', () => {
+  // The transcript is the PLUGIN's data: the host writes llm-usage, the plugin
+  // writes llm-history through its own storage capability (design §4.2). These
+  // assert the round trip at the bridge level.
+  test('a finished turn is written to the plugin storage under llm-history', async () => {
+    await loadApp();
+    await handshake(['llm.chat', 'storage']);
+    document.getElementById('prompt').value = '你好';
+    document.getElementById('send').click();
+    const { requestId } = byType('request')[0].payload;
+
+    hostSends({ v: 1, type: 'event', name: 'llm.done', payload: { requestId, text: '喵' } });
+
+    const writes = byType('request').filter((r) => r.method === 'storage.set');
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes[0].payload.key).toBe('llm-history');
+    const stored = JSON.parse(writes[writes.length - 1].payload.value);
+    expect(stored.map((m) => m.text)).toContain('你好');
+    expect(stored.map((m) => m.text)).toContain('喵');
+  });
+
+  test('the stored transcript is read back and rendered', async () => {
+    await loadApp();
+    const [readId] = (() => {
+      hostSends(initFrame(['llm.chat', 'storage']));
+      return byType('request').filter((r) => r.method === 'storage.get').map((r) => r.id);
+    })();
+    // The host answers the storage.get with what it holds.
+    const stored = [{ role: 'user', text: '早上好' }, { role: 'assistant', text: '早上好呀' }];
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { v: 1, type: 'response', id: readId, ok: true, result: { value: JSON.stringify(stored) } },
+        source: window,
+      }),
+    );
+
+    const lines = [...document.querySelectorAll('#reply .msg')].map((el) => el.textContent);
+    expect(lines).toContain('早上好');
+    expect(lines).toContain('早上好呀');
+  });
+
+  test('without the storage permission nothing is written', async () => {
+    await loadApp();
+    await handshake(['llm.chat']);
+    document.getElementById('prompt').value = '你好';
+    document.getElementById('send').click();
+    const { requestId } = byType('request')[0].payload;
+    hostSends({ v: 1, type: 'event', name: 'llm.done', payload: { requestId, text: '喵' } });
+
+    expect(byType('request').filter((r) => r.method === 'storage.set')).toHaveLength(0);
   });
 });
 
