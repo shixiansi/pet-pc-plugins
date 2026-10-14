@@ -7,12 +7,16 @@
  * rectangles - anything drawn past the rectangle is simply cut off, so the
  * decoration reads as a glitch rather than as depth.
  *
- * ONE document, FOUR appearances. The root class picks which one is drawn:
+ * ONE document, THREE appearances. The root class picks which one is drawn:
  *
  *   .view-panel   the conversation slot            (380x520, list + composer)
- *   .view-card    floating block 0                 (300x112)
- *   .view-bar     floating block 1                 (300x56)
- *   .view-bubble  floating blocks 2, 3 and 4       (ellipses)
+ *   .view-card    floating block 0                 (150x112, above the pet)
+ *   .view-bar     floating block 1                 (150x56,  below the pet)
+ *
+ * The two floating blocks are exactly as wide as the pet and share its column,
+ * so the reply sits directly on top of the pet and the input box directly under
+ * it. Both are narrow: 150px fits about ten Chinese characters per line, which
+ * is why the card shows fewer, shorter lines than the panel does.
  *
  * Layout rule: the message list is the only thing that grows, and it scrolls
  * inside itself. Nothing here may push the composer out of the box it was
@@ -33,16 +37,17 @@
  * The browser's own rule for `[hidden]` is `display: none`, but it lives in the
  * user-agent stylesheet - so ANY author rule that sets `display` outranks it, and
  * an element marked `hidden` in the markup stays visible. That is not a cosmetic
- * detail in this plugin: `#dots` is marked `hidden` in the panel view and is styled
- * `position: absolute; inset: 0; display: flex`, which made it a full-size layer on
- * top of the whole conversation. It has no visible background, so the interface
- * looked completely normal - and every click landed on that invisible layer instead
- * of on the send box or the buttons, so the whole panel appeared dead.
+ * detail in this plugin: the reply list used to be flanked by a dot-trail layer
+ * that was `position: absolute; inset: 0; display: flex`, and marking that layer
+ * `hidden` in the panel view left it a full-size layer on top of the whole
+ * conversation. It had no visible background, so the interface looked completely
+ * normal - and every click landed on that invisible layer instead of on the send
+ * box or the buttons, so the whole panel appeared dead.
  *
- * The fix is this rule rather than removing `display: flex`, because the pattern
- * (`hidden` in the markup, `display` in the stylesheet) is used by several elements
- * and each one would have to be audited separately. Making `hidden` authoritative
- * once is what keeps the next such element from reintroducing the bug.
+ * The dot layer is gone, but the rule stays: the pattern (`hidden` in the
+ * markup, `display` in the stylesheet) is what `#reply` still relies on - it is
+ * `display: flex` here and `hidden` in the input-bar view - so removing the rule
+ * would bring the same invisible-overlay bug straight back.
  */
 [hidden] {
   display: none !important;
@@ -138,13 +143,6 @@ body {
   opacity: 0.6;
 }
 
-.hint {
-  margin: 0;
-  flex: 0 0 auto;
-  color: #9aa3b2;
-  font-size: 12px;
-}
-
 .compose {
   flex: 0 0 auto;
   display: flex;
@@ -205,46 +203,43 @@ body {
   background: #3b7cf7;
 }
 
-/* --- the thinking bubbles ---------------------------------------------------
- * Three ellipses, and the region the host cropped the window to is an ellipse
- * too, so the box itself is round rather than a rounded rectangle: a rectangle
- * inside an elliptical crop would leave its four corners cut away and show the
- * desktop through the gaps.
+/* The send button's glyph.
+ *
+ * It is an inline SVG rather than a font character or an image file: this
+ * document runs on an opaque origin and must not fetch anything, and a glyph
+ * from a system font would render differently - or as a tofu box - on a machine
+ * without that font. `currentColor` makes it follow the button's text colour, so
+ * the disabled state dims the icon through the existing `.btn:disabled` opacity
+ * without a second rule.
  */
-.view-bubble,
-body.view-bubble {
-  border-radius: 50%;
+.icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  pointer-events: none;
 }
 
-.dots {
-  position: absolute;
-  inset: 0;
+/* A button whose only content is an icon still needs to be a comfortable
+ * target, so it is centred rather than sized by its (empty) text. */
+.btn.icon-only {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  margin: 0;
-  padding: 0;
+  flex: 0 0 auto;
+  min-width: 44px;
 }
 
-.dots i {
-  display: block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #6f7a8c;
-  opacity: 0.5;
-}
-
-.dots i.on {
-  background: #e8eaf0;
-  opacity: 1;
-}
-
-/* --- the floating card ------------------------------------------------------
- * 300x112: room for a few lines and a one-row composer. The block is a window
- * region, so its own rounded corners come from the region the host cropped -
- * the radius here only keeps the content off the corner.
+/* --- the floating reply card (above the pet) --------------------------------
+ * 300x112 and sitting directly on top of the pet, centred on it. It shows the
+ * LATEST REPLY ONLY - never the questions that were sent - because it is the
+ * current answer rather than a transcript; the panel's 对话 tab is the record.
+ * `app.js`'s `renderHistory` draws that single line.
+ *
+ * The composer is hidden outright - this block is the ANSWER, and the input bar
+ * below the pet is where you type. The block is a window region, so its own
+ * rounded corners come from the region the host cropped; the radius here only
+ * keeps the content off the corner.
  */
 body.view-card {
   padding: 8px;
@@ -253,27 +248,30 @@ body.view-card {
   background: #1d2027;
 }
 
+body.view-card .bar,
+body.view-card .compose {
+  display: none;
+}
+
 body.view-card .reply {
   padding: 6px;
   border-color: #262b35;
 }
 
 body.view-card .msg {
-  padding: 4px 7px;
+  padding: 5px 8px;
   font-size: 12px;
 }
 
-body.view-card .compose {
-  gap: 6px;
-}
-
-body.view-card .actions {
-  display: none;
-}
-
-/* --- the floating input bar -------------------------------------------------
- * 300x56: one textarea and one send button, side by side. Nothing else fits,
- * so the message list and the button row are hidden rather than shrunk.
+/* --- the floating input bar (below the pet) ---------------------------------
+ * 300x56: one textarea and one icon button, side by side. Nothing else fits, so
+ * the message list and the header are hidden rather than shrunk.
+ *
+ * The send button is the one control this block keeps: it is the only way to
+ * submit from here, and hiding it would leave the user typing into a box with
+ * no way to send. 停止 / 气泡 / 浮层面 stay in the panel, where there is room
+ * for them - they live in the same `.actions` row, so the row stays and the
+ * three of them are hidden individually.
  */
 body.view-bar {
   flex-direction: row;
@@ -285,10 +283,7 @@ body.view-bar {
 }
 
 body.view-bar .bar,
-body.view-bar .reply,
-body.view-bar .hint,
-body.view-bar .dots,
-body.view-bar .actions {
+body.view-bar .reply {
   display: none;
 }
 
@@ -299,40 +294,30 @@ body.view-bar .compose {
 }
 
 body.view-bar .prompt {
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   max-height: none;
   padding: 6px 8px;
 }
 
-/* --- the bubbles -----------------------------------------------------------
- * The smallest blocks are ellipses with a dot trail; a single line of text at
- * most, and only for the largest of them, so a 15x9 tip never tries to draw a
- * sentence.
- */
-body.view-bubble {
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  gap: 0;
-  background: #1d2027;
+body.view-bar .actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
 }
 
-body.view-bubble .bar,
-body.view-bubble .reply,
-body.view-bubble .hint,
-body.view-bubble .compose {
+body.view-bar #stop,
+body.view-bar #bubble,
+body.view-bar #surface {
   display: none;
 }
 
-/* The 34x20 trail carries short text; the two smaller tips are dots only. */
-body.view-bubble .dots {
-  gap: 3px;
-}
-
-@media (max-height: 200px) {
-  body.view-card .bar {
-    display: none;
-  }
+/* The send button keeps a square-ish target instead of stretching: `.btn` is
+ * `flex: 1 1 auto`, which would let it claim as much room as the textarea. 44px
+ * is also the comfortable minimum for a touch or mouse target. */
+body.view-bar #send {
+  width: 44px;
+  height: 100%;
 }
 
 @media (max-width: 200px) {

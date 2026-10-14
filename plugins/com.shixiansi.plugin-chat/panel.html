@@ -5,14 +5,20 @@
 <title>对话插件</title>
 <link rel="stylesheet" href="./style.css">
 </head>
-<!-- ONE document, four appearances.
+<!-- ONE document, THREE appearances.
      The host mounts this file in two different places: inside the conversation
      slot (the panel, where it fills a 380x520 area) and once per declared
-     floating rectangle (the 300x112 card, the 300x56 input bar and the three
-     small thinking bubbles). `app.js` reads `surface.kind` and
-     `surface.rectIndex` from the `init` frame and swaps the root class between
-     `view-panel` / `view-card` / `view-bar` / `view-bubble`, which is what
-     turns one document into the right shape for each block. -->
+     floating rectangle (the 300x112 reply card above the pet and the 300x56
+     input bar below it). `app.js` reads `surface.kind` and `surface.rectIndex`
+     from the `init` frame and swaps the root class between `view-panel` /
+     `view-card` / `view-bar`, which is what turns one document into the right
+     shape for each block.
+
+     The two floating blocks are placed by the manifest: the card sits directly
+     ABOVE the pet and the bar directly BELOW it, both centred on the pet. They
+     are 300 wide and the pet is 150, so the extra width extends to the pet's
+     free side rather than being clipped. Nothing in this file decides that -
+     the numbers live in manifest.json and the host crops the window to them. -->
 <body id="root" class="view-panel" data-surface="panel" data-shape="view-panel">
 <header class="bar">
   <span class="title">对话插件</span>
@@ -21,24 +27,31 @@
 
 <!-- The message list owns the scroll: it is the only element that grows, and
      `overflow-y:auto` plus `min-height:0` keeps that growth inside the box
-     instead of pushing the composer out of it. -->
+     instead of pushing the composer out of it.
+
+     In the PANEL it shows the whole transcript. In the floating reply card it
+     shows ONLY the latest reply - `app.js`'s `renderHistory` decides which, from
+     the same `history` array, so the record is never lost, only not shown. -->
 <main id="reply" class="reply" aria-live="polite"></main>
 
-<p id="hint" class="hint" hidden>双击桌宠可以在这个卡片旁边继续聊。</p>
-
 <footer class="compose">
-  <textarea id="prompt" class="prompt" rows="1" placeholder="和大模型说点什么…" aria-label="消息" disabled></textarea>
+  <textarea id="prompt" class="prompt" rows="1" aria-label="消息" disabled></textarea>
   <div class="actions">
-    <button id="send" type="button" class="btn primary" disabled>发送</button>
+    <!-- The send button is an ICON, not the word 发送. Its accessible name is the
+         aria-label, so a screen reader still announces it; the glyph is an inline
+         SVG rather than a font or an image file because this document runs in an
+         opaque-origin sandbox and must not fetch anything. The path is
+         `ph:paper-plane-tilt-fill` from Iconify. -->
+    <button id="send" type="button" class="btn primary icon-only" aria-label="发送" title="发送" disabled>
+      <svg class="icon" viewBox="0 0 256 256" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M231.4 44.34v.15l-58.2 191.94a15.88 15.88 0 0 1-14 11.51q-.69.06-1.38.06a15.86 15.86 0 0 1-14.42-9.15l-36.4-74.7a4 4 0 0 1 .77-4.58l57.92-57.92a8 8 0 0 0-11.31-11.31l-57.95 57.92a4 4 0 0 1-4.58.77l-74.77-36.39a16 16 0 0 1 2.49-29.8l191.94-58.2h.15a16 16 0 0 1 19.74 19.7"/>
+      </svg>
+    </button>
     <button id="stop" type="button" class="btn" disabled>停止</button>
     <button id="bubble" type="button" class="btn" disabled>气泡</button>
     <button id="surface" type="button" class="btn" disabled>浮层面</button>
   </div>
 </footer>
-
-<!-- The thinking bubbles: one dot per ellipse block, sized by the rect index so
-     the 34x20 trail and the 15x9 tip do not draw the same mark. -->
-<div id="dots" class="dots" hidden aria-hidden="true"><i></i><i></i><i></i></div>
 
 <script type="module" src="./app.js"></script>
 </body>

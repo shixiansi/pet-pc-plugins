@@ -24,7 +24,7 @@ market/                                    ← 本仓根目录（独立 git 仓�
 │       ├── app.js                         插件前端逻辑（桥接、流式渲染、气泡）
 │       └── style.css                      插件自己的样式
 └── dist/
-    └── com.shixiansi.plugin-chat-1.1.0.zip  打包产物：manifest.json + 资源，全部在 zip 根目录
+    └── com.shixiansi.plugin-chat-1.3.0.zip  打包产物：manifest.json + 资源，全部在 zip 根目录
 ```
 
 **发布流程只有三步**：改 `plugins/<id>/` 下的内容 → 运行 `tools/package.ps1` → 提交 `dist/` 里新生成的 zip 与更新后的 `index.json`。
@@ -56,18 +56,15 @@ market/                                    ← 本仓根目录（独立 git 仓�
 {
   "id": "com.shixiansi.plugin-chat",
   "name": "对话插件",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "author": "shixiansi",
   "description": "在面板里与桌宠旁和大模型对话的官方插件；自己的 AI 配置与密钥由自己保存。",
   "permissions": ["llm.chat", "pet.bubble", "pet.surface", "plugin.config", "storage"],
   "panel": true,
   "panelSlot": "chat",
   "surface": [
-    { "dx": 160, "dy": 10, "w": 300, "h": 112, "radius": 14 },
-    { "dx": 160, "dy": 226, "w": 300, "h": 56, "radius": 14 },
-    { "dx": 160, "dy": 138, "w": 34, "h": 20, "ellipse": true },
-    { "dx": 160, "dy": 163, "w": 24, "h": 14, "ellipse": true },
-    { "dx": 160, "dy": 184, "w": 15, "h": 9, "ellipse": true }
+    { "dx": -75, "dy": -120, "w": 300, "h": 112, "radius": 14 },
+    { "dx": -75, "dy": 208, "w": 300, "h": 56, "radius": 14 }
   ],
   "config": [
     { "key": "llmBaseUrl", "label": "接口地址", "type": "text", "default": "https://api.deepseek.com/v1", "hostWhitelist": true },
@@ -78,6 +75,12 @@ market/                                    ← 本仓根目录（独立 git 仓�
 ```
 
 （上面为了可读性省略了另 12 项 `config`；文件里是完整的 14 项 —— 13 个 `llm*` 设置 + `llmApiKey`。）
+
+上面那两块 `surface` 就是「宠物**正上方** 300×112 的回复卡」和「宠物**正下方** 300×56 的输入条」：
+`dy` 从宠物左上角往下量，所以负数是往**上**，超过宠物高度（150×200 那档是 200）就是往**下**。
+两块都是 300 宽、`dx: -75`，即**以 150 宽的宠物为中心**，各向两侧外扩 75px；
+宠物紧贴窗口边缘时多出来的部分会被区域裁剪的边界夹回（见宿主 README 的「对话浮层面」一节）。
+1.1.0 及更早的版本还声明过三个 `ellipse: true` 的「思考泡泡」，现已去掉。
 
 ---
 
@@ -127,18 +130,20 @@ powershell -ExecutionPolicy Bypass -File tools\package.ps1
 
 ```powershell
 git add dist/ index.json
-git commit -m "feat: [AI-GEN] publish com.shixiansi.plugin-chat 1.1.0"
+git commit -m "feat: [AI-GEN] publish com.shixiansi.plugin-chat 1.3.0"
 git push            # 由维护者手动执行，agent 不推送
 ```
 
 ### 示例插件的前端行为（`app.js`）
 
 - 启动即向宿主发 `{v:1,type:'ready'}`；收到宿主回投的 `init` 后才按 `init.granted` 启用界面——缺 `llm.chat` 时输入区禁用且状态行显示「未获授权：llm.chat」，缺 `pet.bubble` / `pet.surface` 时对应按钮禁用。**`init` 之前不发起任何 `request`**。
-- **一份文档、四种外观**：`init.surface.kind` 为 `'panel'` 时渲染会话视图（消息列表 + 输入框）；为 `'surface'` 时按 `init.surface.rectIndex` 渲染卡片（`0`）、输入条（`1`）或思考泡泡（`2` 起）。四种外观的根元素 class 互不相同（`view-panel` / `view-card` / `view-bar` / `view-bubble`），这正是 `style.css` 区分它们的依据。
+- **一份文档、三种外观**：`init.surface.kind` 为 `'panel'` 时渲染会话视图（消息列表 + 输入框）；为 `'surface'` 时按 `init.surface.rectIndex` 渲染宠物上方的回复卡（`0`）或宠物下方的输入条（`1`）。三种外观的根元素 class 互不相同（`view-panel` / `view-card` / `view-bar`），这正是 `style.css` 区分它们的依据。
+- **两个浮层面视图各画多少历史**：`history` 是同一份数组，面板画全部往来，回复卡**只画最后一条回复**（反向扫描第一条非 `user` 条目，而不是取末项——提问已发、回复未到时末项是提问）。`llm.*` 事件按 `pluginId` 投给**所有**界面，所以只有**发起请求的那一帧**写转写（holder 的 `owner` 标志），其余帧只显示；`stop` 会把该 requestId 记为已结束，迟到的分片不会把它重建出来。
 - 流式回复（`llm.delta`）追加到**同一个文本节点**，该节点活到整条回复结束；`requestId` 不匹配的迟到分片一律丢弃；`llm.error` 渲染为一条系统行；`llm.done` 用宿主给的全量文本收口——**当全文与已累积内容不一致时整体替换显示文本**，而不是再追加一段，否则丢片修好的答复会重复半句。
 - 对话记录由插件自己经 `storage.set` / `storage.get`（key `llm-history`）读写；宿主的 `llm.chat` **不写转写**。每日本次用量（`llm-usage`）由宿主唯一写。
 - 「气泡」按钮发 `bubble.say`（取回复首行），「浮层面」按钮在 `surface.show` / `surface.hide` 之间切换。
-- 样式纪律：`style.css` 中**没有** `box-shadow`/`filter`/`text-shadow`/`transform`——这些装饰会画到盒子之外，而面板槽位与浮层面都活在被区域裁剪的窗口矩形内；三个思考泡泡是 `border-radius: 50%` 的椭圆，与宿主裁剪它们的椭圆区域一致。
+- 样式纪律：`style.css` 中**没有** `box-shadow`/`filter`/`text-shadow`/`transform`——这些装饰会画到盒子之外，而面板槽位与浮层面都活在被区域裁剪的窗口矩形内。
+- 输入框**没有 placeholder**、面板里**没有提示行**、也没有那三个思考泡泡的点层：输入框靠 `aria-label` 说明自己，省下来的高度留给消息列表。发送键是**纸飞机图标**（内联 SVG，`ph:paper-plane-tilt-fill`）而不是「发送」二字，可访问名走 `aria-label`——图标必须是内联的：这个文档跑在不透明源的沙箱里，取不到任何外部资源。
 
 运行测试（需要宿主仓 `pet_PC` 的 `frontend\node_modules`，本仓通过目录 junction 复用，不自己再装一份）：
 
@@ -176,7 +181,7 @@ https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/
 
 ```
 https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/index.json
-https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/dist/com.shixiansi.plugin-chat-1.1.0.zip
+https://gh-proxy.com/https://raw.githubusercontent.com/shixiansi/pet-pc-plugins/main/dist/com.shixiansi.plugin-chat-1.3.0.zip
 ```
 
 基址可在桌宠的「设置」页里修改（点「打开插件市场」进市场程序改）；把它**清空**表示强制使用桌宠内置的示例源（离线兜底，内容与 `dist/` 同字节）。
