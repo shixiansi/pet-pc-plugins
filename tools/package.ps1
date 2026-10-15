@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Packages every plugin under plugins/ and refreshes the market catalogue.
 
@@ -137,12 +137,40 @@ foreach ($manifestPath in $manifestFiles) {
 
     # The zip holds the manifest plus the entry plus the three resources; the
     # union keeps a plugin whose entry is not panel.html working too.
+    #
+    # `assets` are the extra files a package declares - audio, in the voice
+    # plugin's case. They are appended AFTER the fixed set, and each is verified
+    # to exist here rather than failing later inside the zip writer, because the
+    # failure there names a stream instead of the file the author forgot.
+    #
+    # The path rules are re-checked even though the manifest validator applies
+    # them too: this script also runs over plugin directories that were never
+    # parsed by Go (a work-in-progress package), and a ".." here would make the
+    # zip read a file from outside the plugin - i.e. publish something the author
+    # never meant to ship.
     $zipMembers = New-Object System.Collections.Generic.List[string]
     $zipMembers.Add('manifest.json')
     foreach ($name in @($fixedResources)) {
         if (-not $zipMembers.Contains($name)) { $zipMembers.Add($name) }
     }
     if (-not $zipMembers.Contains($manifest.entry)) { $zipMembers.Add($manifest.entry) }
+
+    $declaredAssets = @()
+    if ($null -ne $manifest.assets) { $declaredAssets = @($manifest.assets) }
+    foreach ($asset in $declaredAssets) {
+        if ([string]::IsNullOrWhiteSpace($asset)) { throw "$manifestPath 的 assets 含空项" }
+        $assetPosix = $asset -replace '\\', '/'
+        if ($assetPosix -match '^/') { throw "$manifestPath 的 assets 不能是绝对路径：$asset" }
+        if ($assetPosix -match '(^|/)\.\.(/|$)' -or $assetPosix -match '(^|/)\.(/|$)') {
+            throw "$manifestPath 的 assets 不能包含 . 或 .. 路径段：$asset"
+        }
+        if (-not $zipMembers.Contains($assetPosix)) { $zipMembers.Add($assetPosix) }
+
+        $assetPath = Join-Path $pluginDir ($assetPosix -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -Path $assetPath -PathType Leaf)) {
+            throw "插件 $id 声明的 assets 文件不存在：$assetPosix"
+        }
+    }
 
     # Delete then recreate, so a stale archive can never contribute an extra
     # entry to the new one.
@@ -201,6 +229,16 @@ foreach ($manifestPath in $manifestFiles) {
         Author      = [string]$manifest.author
         Description = [string]$manifest.description
         Permissions = $permissions
+        # netHosts must be carried here, not just inside the package.
+        #
+        # The installer compares the catalogue row against the manifest INSIDE the
+        # zip and refuses the install when they differ, because "what the user was
+        # shown is not what they would be authorising". Omitting this field made
+        # every net.fetch plugin uninstallable from the built-in source: the
+        # catalogue reported no hosts, the package declared some, and the refusal
+        # blamed the permissions list - which matched, making the message look
+        # like a bug in the comparison rather than a missing field here.
+        NetHosts    = @($manifest.netHosts)
         Download    = "dist/$zipName"
         Sha256      = $sha256
         ZipPath     = $zipPath
@@ -227,6 +265,14 @@ for ($i = 0; $i -lt $entries.Count; $i++) {
     [void]$sb.Append("      ""description"": " + (ConvertTo-JsonString $e.Description) + ",`n")
     $perms = ($e.Permissions | ForEach-Object { ConvertTo-JsonString $_ }) -join ', '
     [void]$sb.Append("      ""permissions"": [" + $perms + "],`n")
+    # Emitted only when non-empty, matching the manifest's own `omitempty` and the
+    # Go struct's, so a plugin without hosts produces byte-identical JSON to
+    # before and the chat package's digest does not move.
+    $hosts = @($e.NetHosts | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($hosts.Count -gt 0) {
+        $hostJson = ($hosts | ForEach-Object { ConvertTo-JsonString $_ }) -join ', '
+        [void]$sb.Append("      ""netHosts"": [" + $hostJson + "],`n")
+    }
     [void]$sb.Append("      ""download"": " + (ConvertTo-JsonString $e.Download) + ",`n")
     [void]$sb.Append("      ""sha256"": " + (ConvertTo-JsonString $e.Sha256) + "`n")
     [void]$sb.Append("    }")

@@ -16,15 +16,22 @@ market/                                    ← 本仓根目录（独立 git 仓�
 ├── index.html                             人看的静态市场页（单文件、无脚本、无外链）
 ├── package.json / vitest.config.js        示例插件前端行为的测试（需要宿主仓的 node_modules）
 ├── tools/package.ps1                      打包 + 算 sha256 + 回写 index.json + 复制进宿主内置源
-├── tests/plugin-app.test.js               针对 plugins/<id>/app.js 的桥接协议行为测试
+├── tests/plugin-app.test.js               针对**对话插件** app.js 的桥接协议行为测试
 ├── plugins/
-│   └── com.shixiansi.plugin-chat/         一个插件一个目录，目录名 == 插件 id
-│       ├── manifest.json                  插件声明
-│       ├── panel.html                     面板视图入口（同时是浮层面入口）
-│       ├── app.js                         插件前端逻辑（桥接、流式渲染、气泡）
-│       └── style.css                      插件自己的样式
+│   ├── com.shixiansi.plugin-chat/         一个插件一个目录，目录名 == 插件 id
+│   │   ├── manifest.json                  插件声明
+│   │   ├── panel.html                     面板视图入口（同时是浮层面入口）
+│   │   ├── app.js                         插件前端逻辑（桥接、流式渲染、气泡）
+│   │   └── style.css                      插件自己的样式
+│   └── com.shixiansi.plugin-voice/        语音插件
+│       ├── manifest.json                  声明 audio/events 等权限、background、assets
+│       ├── panel.html                     工坊界面入口（由**市场程序**托管，不占桌宠面板）
+│       ├── app.js                         事件→台词映射、生成、采用
+│       ├── style.css                      两栏工坊样式
+│       └── lines/*.wav                    5 条内置台词音频（随包，569 KB）
 └── dist/
-    └── com.shixiansi.plugin-chat-1.3.0.zip  打包产物：manifest.json + 资源，全部在 zip 根目录
+    ├── com.shixiansi.plugin-chat-1.3.0.zip   打包产物：manifest.json + 资源，全部在 zip 根目录
+    └── com.shixiansi.plugin-voice-1.0.0.zip  同上，外加 assets 声明的 5 条音频
 ```
 
 **发布流程只有三步**：改 `plugins/<id>/` 下的内容 → 运行 `tools/package.ps1` → 提交 `dist/` 里新生成的 zip 与更新后的 `index.json`。
@@ -42,13 +49,15 @@ market/                                    ← 本仓根目录（独立 git 仓�
 | `version` | ✅ | 语义化版本，`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`，如 `1.0.0` |
 | `author` | ✅ | 作者，非空 |
 | `description` | ✅ | 说明，非空，长度 ≤ 512 |
-| `permissions` | ✅ | 权限数组，可为空数组；每项必须是下表的十项之一，**不允许重复** |
+| `permissions` | ✅ | 权限数组，可为空数组；每项必须是下表的**十一项**之一，**不允许重复** |
 | `netHosts` | 选填 | `net.fetch` 的域名白名单，元素形如 `host` 或 `host:port`。**声明了 `net.fetch` 却不给 `netHosts` 视为非法**；反之不声明 `net.fetch` 就不需要这个键 |
 | `panel` | 选填 | 布尔；是否注册面板视图（插件 tab 已移除，面板视图现在挂在宿主的面板槽位上） |
 | `panelSlot` | 选填 | 面板槽位名，目前只接受 `"chat"`；声明它必须同时 `panel: true` |
 | `surface` | 选填 | 浮层面矩形数组，最多 8 块；每块 `w>0 && h>0`、边长 ≤ 2000、`0 ≤ radius ≤ 200`、`|dx| ≤ 4000`、`|dy| ≤ 4000`；`"ellipse": true` 的块画成椭圆而非圆角矩形 |
+| `background` | 选填 | 布尔；申请一个**无界面的常驻帧**（桌宠会挂一个隐藏 iframe，生命周期与进程相同）。用于"没有界面打开时也要做事"的插件。**必须同时申请 `events` 权限**，否则拒绝——常驻帧的用途就是无人看着时收事件 |
+| `assets` | 选填 | 包内额外携带的文件数组，最多 32 项；每项是相对路径（通过 `ValidRelPath`），不得绝对、不含 `..`。`audio.import` 只接受**在这里声明过**的路径 |
 | `config` | 选填 | 插件自己的设置声明，最多 16 项；每项 `key`/`label`/`type`（`text`/`number`/`bool`/`secret`）与 `default`；`secret: true` 的项值加密存储且永不出现在任何返回值里；`hostWhitelist: true` 至多一项，它的当前值会成为该插件的 `net.fetch` 额外主机白名单 |
-| `entry` | ✅ | 入口 HTML，相对路径、以 `.html` 结尾、不含 `\` 与 `..`、不以 `/` 开头；`panel` 与 `surface` 都未声明时拒绝（插件至少要有一种界面落点） |
+| `entry` | ✅ | 入口 HTML，相对路径、以 `.html` 结尾、不含 `\` 与 `..`、不以 `/` 开头；`panel`、`surface`、`background` **三者至少有一个**（插件总得有个界面落点，或者至少有个宿主会挂起来的文档） |
 
 官方示例插件 `plugins/com.shixiansi.plugin-chat/manifest.json`：
 
@@ -84,9 +93,9 @@ market/                                    ← 本仓根目录（独立 git 仓�
 
 ---
 
-## 3. 十项权限的含义
+## 3. 十一项权限的含义
 
-插件能做的事**只有**这十项，全部由桌宠侧门控；插件本身读写不了文件、也发不出网络请求。
+插件能做的事**只有**这十一项，全部由宿主程序侧门控；插件本身读写不了文件、也发不出网络请求。
 
 | 权限 | 含义 |
 |---|---|
@@ -94,16 +103,25 @@ market/                                    ← 本仓根目录（独立 git 仓�
 | `todos.write` | 新增、修改、完成与删除待办 |
 | `pet.bubble` | 让桌宠弹出一句话的气泡 |
 | `timer.read` | 读取番茄钟阶段与剩余时间 |
-| `events` | 订阅待办与番茄钟的变化事件（`todos.changed` / `timer.changed`） |
-| `net.fetch` | 访问网络，**仅限**该插件 `manifest.json` 里 `netHosts` 声明的域名，外加它 `hostWhitelist` 配置项当前值里的域名 |
+| `events` | 订阅待办与番茄钟的变化事件（`todos.changed` / `timer.changed` / `timer.phaseEnded` / `reminder.fired`）。**关闭界面后也会送达**——前提是插件用 `background` 申请了常驻帧 |
+| `net.fetch` | 访问网络，**仅限**该插件 `manifest.json` 里 `netHosts` 声明的域名，外加它 `hostWhitelist` 配置项当前值里的域名。默认按**文本**返回正文，`encoding: "base64"` 才取二进制（文本形式对 WAV 这类数据是**有损**的：非法字节会被替换成 U+FFFD，文件大小看着对、播出来是噪声） |
 | `storage` | 在插件自己的私有目录里保存少量数据 |
 | `pet.surface` | 在桌宠旁显示自定义浮层面 |
 | `llm.chat` | 调用该插件自己配置的大模型（流式返回）；**模型密钥归插件所有**，加密存在插件私有目录里 |
 | `plugin.config` | 保存插件自己的设置；存在插件私有目录里，插件之间互相读不到 |
+| `audio` | 在插件自己的私有目录里保存并播放音频（`audio.save/list/remove/play/stop/import`，单条上限 16 MiB） |
+
+**没有 `background` 权限**：常驻帧由 manifest 的 `background` 字段申请、由既有的 `events` 权限门控。门禁里有一条「权限表与方法表逐项一致」的断言——每个权限都必须被某个方法使用，所以一个只用来"批准后台运行"、背后没有方法的权限会正好违反它。
+
+**`audio` 不是 `storage` 的加宽**：`storage` 装的是少量**文本**（插件自己的 JSON），`audio` 装的是**二进制、几百 KB 量级**。只想记住一个设置的插件，不该为此被授予一个它永远不用的音频出口。
 
 示例插件申请 `llm.chat`、`pet.bubble`、`pet.surface`、`plugin.config`、`storage` 五项。它**不**申请 `net.fetch`（请求统一由宿主的 `llm.chat` 发出），因此它既不需要也不包含 `netHosts`。
 
-安装完成时插件是**停用**状态：你可以先看清它申请的权限，再自行启用并逐项授权。插件调用了未授权的能力时，桌宠会直接拒绝，且**不产生任何副作用**。
+语音插件申请 `audio`、`events`、`storage`、`plugin.config`、`net.fetch` 五项，并声明 `background: true` 与 `netHosts: ["127.0.0.1:9880"]`（它直连本机 GPT-SoVITS 渲染台词）。
+
+安装完成时插件是**停用**状态：你可以先看清它申请的权限，再自行启用并逐项授权。插件调用了未授权的能力时，宿主会直接拒绝，且**不产生任何副作用**。
+
+> **两个宿主程序的能力表不同。** 桌宠与市场共用同一套调度器与资源路由，但市场没有待办文件、没有番茄钟、没有宠物窗口，所以 `todos.*` / `timer.*` / `bubble.say` / `surface.*` / `llm.chat` / `events.subscribe` 从市场调用会得到「本程序不支持该方法」。插件界面被市场托管时（语音插件的配音工坊），这一点要记住。
 
 ---
 
@@ -112,10 +130,16 @@ market/                                    ← 本仓根目录（独立 git 仓�
 唯一路径是 `tools/package.ps1`，它本地、离线地做五件事（可重复运行，幂等）：
 
 1. 读每个 `plugins/<id>/manifest.json`，校验 `id`/`version`/`entry`，并断言 `entry` 指向的文件与 `panel.html`/`app.js`/`style.css` 都在插件目录内；
-2. **先删后建** `dist/<id>-<version>.zip`，把 `manifest.json` 与这些资源放在 **zip 根目录**（不带外层文件夹——桌宠直接解压进 `plugins/<id>/`，多一层目录会让 `manifest.json` 深一层而安装失败）；
+2. **先删后建** `dist/<id>-<version>.zip`，把 `manifest.json` 与这些资源放在 **zip 根目录**（不带外层文件夹——桌宠直接解压进 `plugins/<id>/`，多一层目录会让 `manifest.json` 深一层而安装失败）；`assets` 列出的文件**也一并打进去**，声明了却不存在则**打包失败并点名**（语音插件的 5 条内置音频走这条路）；
 3. 用 `Get-FileHash -Algorithm SHA256` 实算最终 zip 的 sha256（小写 64 位十六进制）；
 4. 用**包内 manifest** 的 `name`/`version`/`author`/`description`/`permissions` 重写 `index.json` 里该条目的同名字段，并更新 `updatedAt`（RFC3339）。这样「目录里展示的权限」与「包里实际申请的权限」不可能漂移；
 5. 把 zip 与 `index.json` 复制到宿主仓的内置源 `internal\plugins\sample\`（同名同字节），作为离线兜底。
+
+> **升版本时要顺手删掉被取代的旧包**（`dist/` 与 `sample/` 各一份），并把
+> `sample/embed.go` 的 `//go:embed` 清单改成新文件名。`embed.go` 是**逐一列出**文件名的
+> （不是目录通配），所以清单不跟着改就会**编译失败**——这是好事，它逼着这一步不能忘。
+> 清单之外多留一个旧 zip 不会被引用、也没有测试会报错，但它会让"这个版本到底发布的是哪一份"
+> 变得需要猜，所以一并删掉。
 
 运行：
 
@@ -151,6 +175,38 @@ git push            # 由维护者手动执行，agent 不推送
 node node_modules\vitest\vitest.mjs run
 ```
 
+> **两套测试各覆盖一个插件**：`tests/plugin-app.test.js` 读
+> `plugins/com.shixiansi.plugin-chat/` 的 `panel.html` 与 `app.js`（41 项）；
+> `tests/plugin-voice.test.js` 读 `plugins/com.shixiansi.plugin-voice/` 的同名文件（39 项）。
+> **两套都只驱动插件自己的前端**——宿主侧的
+> **市场托管插件界面**那段（`tools/plugin-market/frontend/src/plugin-ui.js`，
+> 210 行）**没有测试**。见宿主仓 `docs/voice.md` §8。
+
+### 语音插件的前端行为（`app.js`）
+
+> 以下是**读代码**得到的描述，不是测试结论。逐条的依据见 `docs/voice.md` §8，
+> 那里同时列出了**尚未完成**的部分（角色列表画不出来、「整套换成这个角色」没接线、
+> `gptPath`/`sovitsPath` 填了却不发给引擎、没有 take 列表）。
+
+- 一份文档、**两种外观**：`init.surface.slot === 'background'` 是桌宠挂的**常驻帧**
+  （什么都不画，只 `events.subscribe` 两个边缘事件然后 `audio.play`）；
+  否则就是**工坊**（由**市场程序**托管，不占桌宠面板）。两者的根 class 不同
+  （`view-background` / `view-workshop`）。
+- 事件的 payload **只有事实、没有措辞**：`timer.phaseEnded` 给 `{phase}`，
+  `reminder.fired` 给 `{due,overdue,total}`；哪句话、用谁的嗓子由插件的 `LINES` 表与
+  `resolveClipFor` 决定。
+- 播什么走**一个**解析点 `resolveClipFor`：采用的那一版**必须**在宿主返回的
+  `audio.list` 里，否则退回 `builtin-<line>`——它对着**宿主的清单**校验而不是信任自己存的
+  `settings`，所以用户在插件外面删掉一个片段不会导致静音。
+- 生成走 `net.fetch` 到本机 GPT-SoVITS，**必须** `encoding: 'base64'`（文本形式对 WAV 有损）；
+  回复落 `audio.save`，**宿主确认写盘成功后**才把它记成"采用"，避免把桌宠指向一个还不存在
+  （或永远不会存在）的片段。
+- **插件不启动引擎**：`app.js` 里没有 `exec`/`spawn`，也没有任何启动进程的路径——
+  "启动一个进程"若作为能力开放，等于给每个已装插件任意代码执行。
+- 内置 5 条音频随包（manifest 的 `assets`），首次运行经 `audio.import` 复制进插件自己的
+  `audio/` 目录一次（播放器只认私有目录里的名字，包是只读的）。
+- 样式纪律与对话插件相同：`style.css` 里**没有** `box-shadow`/`filter`/`transform` 声明。
+
 ---
 
 ## 5. 桌宠侧：安装位置
@@ -159,11 +215,14 @@ node node_modules\vitest\vitest.mjs run
 
 ```
 %AppData%\PetPC\plugins\<插件id>\
-%AppData%\PetPC\plugins.json          已装索引（启用状态 + 已授权限）
-%AppData%\PetPC\plugin-data\<插件id>\ 插件私有存储（storage 能力唯一的可写落点）
+%AppData%\PetPC\plugins.json               已装索引（启用状态 + 已授权限）
+%AppData%\PetPC\plugin-data\<插件id>\      插件私有存储（storage / config / audio 能力唯一的可写落点）
+%AppData%\PetPC\plugin-data\<插件id>\audio\<name>.wav   插件自己的音频（audio 能力）
 ```
 
-即示例插件的安装目录是 `%AppData%\PetPC\plugins\com.shixiansi.plugin-chat\`，其中就是 zip 解压出来的 `manifest.json`、`panel.html`、`app.js`、`style.css`。
+即对话插件的安装目录是 `%AppData%\PetPC\plugins\com.shixiansi.plugin-chat\`，其中就是 zip 解压出来的 `manifest.json`、`panel.html`、`app.js`、`style.css`。
+
+语音插件除了那四个文件之外还多一个 `lines\` 目录（5 条内置音频，来自 manifest 的 `assets`）。内置音频会在首次运行时被 `audio.import` **复制一次**进 `plugin-data\<id>\audio\`——播放器只认插件私有目录里的名字，包本身是只读的。
 
 ---
 
